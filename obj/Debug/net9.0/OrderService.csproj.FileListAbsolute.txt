@@ -133,3 +133,4 @@
 /home/nokaxika/Projects/MeatSupplyApp/OrderService/obj/Debug/net9.0/OrderService.pdb
 /home/nokaxika/Projects/MeatSupplyApp/OrderService/obj/Debug/net9.0/OrderService.genruntimeconfig.cache
 /home/nokaxika/Projects/MeatSupplyApp/OrderService/obj/Debug/net9.0/ref/OrderService.dll
+/home/nokaxika/Projects/MeatSupplyApp/OrderService/obj/Debug/net9.0/OrderService.sourcelink.json

@@ -5,6 +5,8 @@ using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.HttpOverrides;
 using OrderService.Data;
 using OrderService.Models;
+using OrderService.Middleware;
+using OrderService.Extensions;
 
 namespace OrderService;
 
@@ -130,22 +132,33 @@ public class Program
             }
         }
 
-        app.MapGet("/health", () => Results.Ok());
+        app.UseMiddleware<CorrelationIdMiddleware>();
+        app.UseMiddleware<ExceptionHandlingMiddleware>();
+        app.UseCors("AllowAll");
 
-        app.MapGet("/", async (AppDbContext db, IDistributedCache cache) =>
+        app.MapGet("/health", (HttpContext ctx) => Results.Ok(new { correlation_id = ctx.GetCorrelationId() }));
+
+        app.MapGet("/", async (AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
+            var correlationId = ctx.GetCorrelationId();
+
             var cached = await cache.GetStringAsync(AllOrdersKey);
-            if (!string.IsNullOrEmpty(cached)) return Results.Text(cached, "application/json");
+            if (!string.IsNullOrEmpty(cached))
+            {
+                var cachedObj = JsonSerializer.Deserialize<object>(cached);
+                return Results.Ok(new { data = cachedObj, correlation_id = correlationId });
+            }
 
             var orders = await db.Orders.Include(o => o.Items).ToListAsync();
             var jsonData = JsonSerializer.Serialize(orders);
             await cache.SetStringAsync(AllOrdersKey, jsonData, cacheOptions);
 
-            return Results.Ok(orders);
+            return Results.Ok(new { data = orders, correlation_id = correlationId });
         });
 
-        app.MapPost("/", async (CreateOrderRequest request, AppDbContext db, IHttpClientFactory clientFactory, IDistributedCache cache) =>
+        app.MapPost("/", async (CreateOrderRequest request, AppDbContext db, IHttpClientFactory clientFactory, IDistributedCache cache, HttpContext ctx) =>
         {
+            var correlationId = ctx.GetCorrelationId();
             var client = clientFactory.CreateClient("DishClient");
 
             var order = new Order
@@ -206,10 +219,10 @@ public class Program
 
             await cache.RemoveAsync("orders:all");
 
-            return Results.Created($"/orders/{order.Id}", order);
+            return Results.Created($"/orders/{order.Id}", new { data = order, correlation_id = correlationId });
         });
 
-        app.MapDelete("/{id}", async (Guid id, AppDbContext db, IDistributedCache cache) =>
+        app.MapDelete("/{id}", async (Guid id, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
             var affected = await db.Orders.Where(x => x.Id == id).ExecuteDeleteAsync();
             if (affected > 0)
@@ -217,10 +230,11 @@ public class Program
                 await cache.RemoveAsync(OrderKey(id));
                 await cache.RemoveAsync(AllOrdersKey);
             }
-            return affected == 0 ? Results.NotFound() : Results.NoContent();
+            if (affected == 0) return Results.NotFound();
+            return Results.NoContent();
         });
 
-        app.MapPatch("/{id}/pay", async (Guid id, AppDbContext db, IDistributedCache cache) =>
+        app.MapPatch("/{id}/pay", async (Guid id, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
             var order = await db.Orders.FindAsync(id);
             if (order is null) return Results.NotFound();
@@ -233,7 +247,7 @@ public class Program
                 await cache.RemoveAsync(OrderKey(id));
                 await cache.RemoveAsync(AllOrdersKey);
 
-                return Results.Ok(new { Status = order.Status.ToString() });
+                return Results.Ok(new { Status = order.Status.ToString(), correlation_id = ctx.GetCorrelationId() });
             }
             catch (InvalidOperationException ex)
             {
