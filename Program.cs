@@ -7,6 +7,7 @@ using OrderService.Data;
 using OrderService.Models;
 using OrderService.Middleware;
 using OrderService.Extensions;
+using OrderService.DTOs;
 
 namespace OrderService;
 
@@ -47,7 +48,6 @@ public class Program
 
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("DefaultConnection not set");
-        builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 
         builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
@@ -117,6 +117,9 @@ public class Program
             c.RoutePrefix = "swagger";
         });
 
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("Running in {Environment}", builder.Environment.EnvironmentName);
+
         using (var scope = app.Services.CreateScope())
         {
             var services = scope.ServiceProvider;
@@ -127,7 +130,7 @@ public class Program
             }
             catch (Exception ex)
             {
-                var logger = services.GetRequiredService<ILogger<Program>>();
+                logger = services.GetRequiredService<ILogger<Program>>();
                 logger.LogError(ex, "An error occurred while migrating the database.");
             }
         }
@@ -149,7 +152,9 @@ public class Program
                 return Results.Ok(new { data = cachedObj, correlation_id = correlationId });
             }
 
-            var orders = await db.Orders.Include(o => o.Items).ToListAsync();
+            var orders = await db.Orders
+                .Include(o => o.Items)
+                .ToListAsync();
             var jsonData = JsonSerializer.Serialize(orders);
             await cache.SetStringAsync(AllOrdersKey, jsonData, cacheOptions);
 
@@ -256,13 +261,18 @@ public class Program
 
         app.MapDelete("/{id}", async (Guid id, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
-            var affected = await db.Orders.Where(x => x.Id == id).ExecuteDeleteAsync();
+            var affected = await db.Orders
+                .Where(x => x.Id == id)
+                .ExecuteDeleteAsync();
+
             if (affected > 0)
             {
                 await cache.RemoveAsync(OrderKey(id));
                 await cache.RemoveAsync(AllOrdersKey);
             }
+
             if (affected == 0) return Results.NotFound();
+
             return Results.NoContent();
         });
 
@@ -290,10 +300,3 @@ public class Program
         app.Run();
     }
 }
-
-public record CreateOrderRequest(Guid UserId, string Address, List<OrderItemRequest> Items);
-public record OrderItemRequest(Guid DishId, Guid PriceOptionId, decimal Quantity);
-
-public record DishPriceOptionDto(Guid Id, string UnitOfMeasure, decimal UnitAmount, decimal Price, string? Label);
-public record DishDto(Guid Id, string Name, string Description, List<DishPriceOptionDto> PriceOptions, string? ImageUrl);
-public record ServiceResponse<T>(T Data, string Correlation_Id);
