@@ -156,6 +156,31 @@ public class Program
             return Results.Ok(new { data = orders, correlation_id = correlationId });
         });
 
+        app.MapGet("/{id}", async (Guid id, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
+        {
+            var correlationId = ctx.GetCorrelationId();
+
+            var cachedOrder = await cache.GetStringAsync(OrderKey(id));
+
+            if (!string.IsNullOrEmpty(cachedOrder))
+            {
+                var cached = JsonSerializer.Deserialize<object>(cachedOrder);
+                return Results.Ok(new { data = cached, correlation_id = correlationId });
+            }
+
+            var order = await db.Orders
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(d => d.Id == id);
+            if (order is null)
+                return Results.NotFound();
+
+            var jsonData = JsonSerializer.Serialize(order);
+
+            await cache.SetStringAsync(OrderKey(id), jsonData, cacheOptions);
+
+            return Results.Ok(new { data = order, correlation_id = correlationId });
+        });
+
         app.MapPost("/", async (CreateOrderRequest request, AppDbContext db, IHttpClientFactory clientFactory, IDistributedCache cache, HttpContext ctx) =>
         {
             var correlationId = ctx.GetCorrelationId();
@@ -177,8 +202,15 @@ public class Program
                 var response = await client.GetAsync($"/{itemRequest.DishId}");
                 if (!response.IsSuccessStatusCode) return Results.BadRequest($"Блюдо {itemRequest.DishId} не найдено.");
 
-                var dish = await response.Content.ReadFromJsonAsync<DishDto>();
-                if (dish is null) continue;
+                var wrapper = await response.Content.ReadFromJsonAsync<ServiceResponse<DishDto>>(new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                var dish = wrapper?.Data;
+
+                if (dish is null || dish.PriceOptions is null)
+                    return Results.BadRequest($"Данные о блюде {itemRequest.DishId} повреждены или отсутствуют.");
 
                 if (itemRequest.Quantity <= 0)
                     return Results.BadRequest("Quantity must be greater than 0.");
@@ -234,7 +266,7 @@ public class Program
             return Results.NoContent();
         });
 
-        app.MapPatch("/{id}/pay", async (Guid id, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
+        app.MapPost("/{id}/pay", async (Guid id, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
             var order = await db.Orders.FindAsync(id);
             if (order is null) return Results.NotFound();
@@ -264,3 +296,4 @@ public record OrderItemRequest(Guid DishId, Guid PriceOptionId, decimal Quantity
 
 public record DishPriceOptionDto(Guid Id, string UnitOfMeasure, decimal UnitAmount, decimal Price, string? Label);
 public record DishDto(Guid Id, string Name, string Description, List<DishPriceOptionDto> PriceOptions, string? ImageUrl);
+public record ServiceResponse<T>(T Data, string Correlation_Id);

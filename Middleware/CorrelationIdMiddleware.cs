@@ -5,11 +5,9 @@ namespace OrderService.Middleware;
 public class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {
     public const string HeaderNameConst = "X-Correlation-ID";
-    // unified items key
     public const string ItemsKeyConst = "CorrelationId";
 
-    // accepted incoming header names
-    public static readonly string[] IncomingHeaderNames = new[] { HeaderNameConst, "X-Request-ID", "Request-Id" };
+    public static readonly string[] IncomingHeaderNames = [HeaderNameConst, "X-Request-ID", "Request-Id"];
 
     private readonly RequestDelegate _next = next;
     private readonly ILogger<CorrelationIdMiddleware> _logger = logger;

@@ -11,9 +11,7 @@ public enum OrderStatus
 public enum PaymentStatus
 {
     NotPaid,
-    Pending,
-    Paid,
-    Refunded
+    Paid
 }
 
 public class Order
@@ -30,13 +28,11 @@ public class Order
 
     public string Address { get; set; } = string.Empty;
 
-    public List<OrderItem> Items { get; set; } = new();
+    public List<OrderItem> Items { get; set; } = [];
 
     public void MarkAsPaid()
     {
-        if (Status != OrderStatus.New)
-            throw new InvalidOperationException($"Нельзя оплатить заказ в статусе {Status}");
-
+        if (Status == OrderStatus.Paid) return;
         Status = OrderStatus.Paid;
     }
 }
