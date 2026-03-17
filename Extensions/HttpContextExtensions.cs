@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using OrderService.Middleware;
 
 namespace OrderService.Extensions;
@@ -37,5 +39,17 @@ public static class HttpContextExtensions
             ctx.Response.Headers[HeaderName] = correlationId;
 
         return Results.Problem(problem);
+    }
+
+    public static bool TryGetUserId(this HttpContext ctx, out Guid userId)
+    {
+        userId = Guid.Empty;
+        if (ctx?.User?.Identity?.IsAuthenticated != true)
+            return false;
+
+        var sub = ctx.User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        return Guid.TryParse(sub, out userId);
     }
 }
