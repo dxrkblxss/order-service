@@ -16,7 +16,6 @@ logs/
 packages/
 *.db
 *.sqlite
-appsettings.Development.json
 appsettings.Local.json
 secrets.json
 *.pfx

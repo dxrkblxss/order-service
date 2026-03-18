@@ -74,7 +74,8 @@ public class Program
 
         builder.Services.AddHttpClient("DishClient", client =>
         {
-            client.BaseAddress = new Uri("http://dish-service:80");
+            var dishServiceBaseUrl = builder.Configuration["Services:DishServiceBaseUrl"] ?? "http://dish-service:80";
+            client.BaseAddress = new Uri(dishServiceBaseUrl);
         });
 
         builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
